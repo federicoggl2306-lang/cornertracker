@@ -157,13 +157,14 @@ function formatMatch(f) {
   );
 }
 
-// Messaggio notifica corner (bello)
-function formatCornerNotification(ev, info) {
+// Messaggio notifica corner (bello) con contatore
+function formatCornerNotification(ev, info, homeCorners, awayCorners) {
   const home = info?.home?.name || "Casa";
   const away = info?.away?.name || "Ospite";
   const scoreH = info?.scoreH ?? "-";
   const scoreA = info?.scoreA ?? "-";
   const league = info?.league || "";
+  const total = (homeCorners || 0) + (awayCorners || 0);
 
   return (
     `🚩 <b>CORNER!</b>\n` +
@@ -173,6 +174,9 @@ function formatCornerNotification(ev, info) {
     `━━━━━━━━━━━━━━\n` +
     `👟 Squadra: <b>${ev.team.name}</b>\n` +
     `⏱ Minuto: <b>${ev.time.elapsed}'</b>\n` +
+    `━━━━━━━━━━━━━━\n` +
+    `🚩 Corner: <b>${home} ${homeCorners} – ${awayCorners} ${away}</b>\n` +
+    `📐 Totale: <b>${total}</b>\n` +
     `━━━━━━━━━━━━━━\n` +
     `📊 /stats_${info?.id}`
   );
@@ -219,7 +223,9 @@ async function checkCorners() {
           lastSeenEvents[matchId].add(eventId);
 
           const info = matchInfo[matchId];
-          const caption = formatCornerNotification(ev, info);
+          const homeCorners = cornerEvents.filter(e => e.team.id === info?.home?.id).length;
+          const awayCorners = cornerEvents.filter(e => e.team.id === info?.away?.id).length;
+          const caption = formatCornerNotification(ev, info, homeCorners, awayCorners);
 
           // Prova a mandare con i loghi delle due squadre
           try {
