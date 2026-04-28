@@ -79,23 +79,36 @@ function todayDate() {
   return new Date().toISOString().split("T")[0];
 }
 
-// Partite di oggi — funziona sempre, anche col piano free
+// Partite live — compatibile col piano gratuito API Football
 async function getLiveMatches() {
-  const date = todayDate();
-  const data = await apiRequest(`/fixtures?date=${date}&timezone=Europe/Rome`);
-  const all = data.response || [];
+  // Tentativo 1: live=all
+  try {
+    const liveData = await apiRequest("/fixtures?live=all");
+    const live = liveData.response || [];
+    console.log("Live=all risultati:", live.length);
+    if (live.length > 0) return live;
+  } catch(e) { console.error("Errore live=all:", e.message); }
 
-  // Filtra solo partite in corso o programmate oggi
-  const live = all.filter(f => {
-    const s = f.fixture.status.short;
-    return ["1H","2H","HT","ET","P","LIVE"].includes(s);
-  });
+  // Tentativo 2: partite di oggi per lega specifica (compatibile col piano free)
+  const TODAY = todayDate();
+  const SEASON = new Date().getFullYear();
+  const LEGHE = [135, 39, 140, 78, 61, 2, 3];
+  let allMatches = [];
 
-  // Se ci sono partite live restituisci quelle, altrimenti tutte di oggi
-  return live.length > 0 ? live : all.filter(f => {
-    const s = f.fixture.status.short;
-    return !["FT","AET","PEN","AWD","WO","CANC","PST","ABD"].includes(s);
-  });
+  for (const leagueId of LEGHE) {
+    try {
+      const data = await apiRequest(`/fixtures?league=${leagueId}&season=${SEASON}&date=${TODAY}`);
+      const matches = data.response || [];
+      console.log(`Lega ${leagueId} oggi: ${matches.length} partite`);
+      allMatches = allMatches.concat(matches);
+    } catch(e) { console.error(`Errore lega ${leagueId}:`, e.message); }
+  }
+
+  const live = allMatches.filter(f => ["1H","2H","HT","ET","P"].includes(f.fixture.status.short));
+  if (live.length > 0) return live;
+  const upcoming = allMatches.filter(f => ["NS","TBD"].includes(f.fixture.status.short));
+  if (upcoming.length > 0) return upcoming;
+  return allMatches;
 }
 
 function getMatchEvents(fixtureId) {
@@ -278,24 +291,28 @@ async function handleCommands() {
           await sendTelegram("😴 Nessuna partita disponibile oggi.\nRiprova più tardi!");
         } else {
           const live = matches.filter(f => ["1H","2H","HT","ET","P"].includes(f.fixture.status.short));
-          const upcoming = matches.filter(f => !["1H","2H","HT","ET","P"].includes(f.fixture.status.short));
+          const upcoming = matches.filter(f => ["NS","TBD"].includes(f.fixture.status.short));
+          const finished = matches.filter(f => ["FT","AET","PEN"].includes(f.fixture.status.short));
 
           if (live.length > 0) {
             let msg = `🔴 <b>Partite LIVE (${live.length})</b>\n\n`;
             live.slice(0, 8).forEach(f => { msg += formatMatch(f) + "\n"; });
             await sendTelegram(msg);
           }
-
           if (upcoming.length > 0) {
-            let msg = `🕐 <b>Prossime partite oggi (${upcoming.length})</b>\n\n`;
+            let msg = `🕐 <b>Prossime oggi (${upcoming.length})</b>\n\n`;
             upcoming.slice(0, 8).forEach(f => { msg += formatMatch(f) + "\n"; });
-            if (upcoming.length > 8) msg += `<i>...e altre ${upcoming.length - 8}. Usa /cerca per filtrare!</i>`;
+            await sendTelegram(msg);
+          }
+          if (live.length === 0 && upcoming.length === 0 && finished.length > 0) {
+            let msg = `✅ <b>Partite di oggi già finite (${finished.length})</b>\n\n`;
+            finished.slice(0, 8).forEach(f => { msg += formatMatch(f) + "\n"; });
             await sendTelegram(msg);
           }
         }
       } catch(e) {
         console.error(e);
-        await sendTelegram("❌ Errore nel caricare le partite.");
+        await sendTelegram("❌ Errore nel caricare le partite. Riprova tra poco.");
       }
     }
 
